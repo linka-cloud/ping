@@ -11,39 +11,34 @@ import (
 	gping "github.com/sparrc/go-ping"
 )
 
-type PingResult struct {
-	address string
-	ping    bool
-}
-
 type Pinger interface {
 	AddAddress(a string) error
 	RemoveAddress(a string) error
 	Run()
 	Stop()
-	Status() []PingResult
+	Status() map[string]gping.Statistics
 }
 
 type GoPinger struct {
-	ctx     context.Context
-	running atomic.Value
-	targets sync.Map
-	results sync.Map
+	ctx        context.Context
+	running    atomic.Value
+	targets    sync.Map
+	results    sync.Map
 	privileged bool
 }
 
 type target struct {
 	*gping.Pinger
-	running bool
+	running atomic.Value
 }
 
 func (t *target) Run() {
-	t.running = true
+	t.running.Store(true)
 	t.Pinger.Run()
 }
 
 func (t *target) Stop() {
-	if !t.running {
+	if !(t.running.Load().(bool)) {
 		return
 	}
 	// The pinger may not be running raising a "close on closed channel error"
@@ -51,16 +46,16 @@ func (t *target) Stop() {
 	defer func() {
 		recover()
 	}()
-	t.running = false
+	t.running.Store(false)
 	t.Pinger.Stop()
 }
 
 func NewPinger(ctx context.Context, privileged bool, address ...string) (Pinger, error) {
 	p := &GoPinger{
-		ctx:     ctx,
-		running: atomic.Value{},
-		targets: sync.Map{},
-		results: sync.Map{},
+		ctx:        ctx,
+		running:    atomic.Value{},
+		targets:    sync.Map{},
+		results:    sync.Map{},
 		privileged: privileged,
 	}
 	p.running.Store(false)
@@ -97,23 +92,18 @@ func (p *GoPinger) AddAddress(a string) error {
 	if err != nil {
 		return err
 	}
-	t := &target{pg, false}
+	t := &target{pg, atomic.Value{}}
+	t.running.Store(false)
 	t.Timeout = time.Second
 	t.Count = 100000
 	t.SetPrivileged(p.privileged)
 	t.OnRecv = func(packet *gping.Packet) {
-		p.results.Store(a, PingResult{
-			address: a,
-			ping:    true,
-		})
+		p.results.Store(a, *t.Statistics())
 	}
 	t.OnFinish = func(statistics *gping.Statistics) {
-		p.results.Store(a, PingResult{
-			address: a,
-			ping:    statistics.PacketsRecv != 0,
-		})
+		p.results.Store(a, *t.Statistics())
 		time.Sleep(time.Second)
-		if t.running {
+		if t.running.Load().(bool) {
 			t.Run()
 		}
 	}
@@ -175,14 +165,14 @@ func (p *GoPinger) Stop() {
 	p.running.Store(false)
 }
 
-func (p *GoPinger) Status() []PingResult {
-	var rs []PingResult
+func (p *GoPinger) Status() map[string]gping.Statistics {
+	rs := make(map[string]gping.Statistics)
 	p.results.Range(func(key, value interface{}) bool {
-		r, ok := value.(PingResult)
+		r, ok := value.(gping.Statistics)
 		if !ok {
 			return false
 		}
-		rs = append(rs, r)
+		rs[key.(string)] = r
 		return true
 	})
 	return rs
