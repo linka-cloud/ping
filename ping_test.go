@@ -15,7 +15,7 @@ func TestRunPingerNoAddress(t *testing.T) {
 		cancel()
 	}()
 	p, err := NewPinger(ctx)
-	handleNoErr(t, err)
+	assertNoErr(t, err)
 	p.Run()
 }
 
@@ -26,7 +26,7 @@ func TestRunPingerWrongAddress(t *testing.T) {
 		cancel()
 	}()
 	p, err := NewPinger(ctx, "some.wrong.address", "localhost")
-	handleErr(t, err)
+	assertErr(t, err)
 	assert.Nil(t, p)
 }
 
@@ -42,14 +42,14 @@ func TestPingerContext(t *testing.T) {
 	assert.False(t, p.running.Load().(bool))
 }
 
-func handleNoErr(t *testing.T, err error) {
+func assertNoErr(t *testing.T, err error) {
 	assert.NoError(t, err)
 	if err != nil {
 		t.FailNow()
 	}
 }
 
-func handleErr(t *testing.T, err error) {
+func assertErr(t *testing.T, err error) {
 	assert.Error(t, err)
 	if err == nil {
 		t.FailNow()
