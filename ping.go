@@ -157,7 +157,7 @@ func (p *GoPinger) Run() {
 
 func (p *GoPinger) Stop() {
 	running := (p.running.Load()).(bool)
-	if running {
+	if !running {
 		return
 	}
 	p.targets.Range(func(key, value interface{}) bool {
