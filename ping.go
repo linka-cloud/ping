@@ -29,6 +29,7 @@ type GoPinger struct {
 	running atomic.Value
 	targets sync.Map
 	results sync.Map
+	privileged bool
 }
 
 type target struct {
@@ -54,12 +55,13 @@ func (t *target) Stop() {
 	t.Pinger.Stop()
 }
 
-func NewPinger(ctx context.Context, address ...string) (Pinger, error) {
+func NewPinger(ctx context.Context, privileged bool, address ...string) (Pinger, error) {
 	p := &GoPinger{
 		ctx:     ctx,
 		running: atomic.Value{},
 		targets: sync.Map{},
 		results: sync.Map{},
+		privileged: privileged,
 	}
 	p.running.Store(false)
 	for _, a := range address {
@@ -98,6 +100,7 @@ func (p *GoPinger) AddAddress(a string) error {
 	t := &target{pg, false}
 	t.Timeout = time.Second
 	t.Count = 100000
+	t.SetPrivileged(p.privileged)
 	t.OnRecv = func(packet *gping.Packet) {
 		p.results.Store(a, PingResult{
 			address: a,

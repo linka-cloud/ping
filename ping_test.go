@@ -2,10 +2,16 @@ package ping
 
 import (
 	"context"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+)
+
+
+const (
+	privileged = runtime.GOOS == "windows"
 )
 
 func TestRunPingerNoAddress(t *testing.T) {
@@ -14,7 +20,7 @@ func TestRunPingerNoAddress(t *testing.T) {
 		time.Sleep(time.Second)
 		cancel()
 	}()
-	p, err := NewPinger(ctx)
+	p, err := NewPinger(ctx, privileged)
 	assertNoErr(t, err)
 	p.Run()
 }
@@ -25,7 +31,7 @@ func TestRunPingerWrongAddress(t *testing.T) {
 		time.Sleep(time.Second)
 		cancel()
 	}()
-	p, err := NewPinger(ctx, "some.wrong.address", "localhost")
+	p, err := NewPinger(ctx, privileged, "some.wrong.address", "localhost")
 	assertErr(t, err)
 	assert.Nil(t, p)
 }
