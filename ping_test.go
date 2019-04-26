@@ -50,21 +50,23 @@ func TestPingerContext(t *testing.T) {
 func TestPingerLocalhost(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 		cancel()
 	}()
 	p, err := NewPinger(ctx, privileged, "localhost")
 	assertNoErr(t, err)
 	go p.Run()
 	c := time.NewTicker(time.Second)
+	count := 0
 	for {
 		select {
 		case <-c.C:
+			count++
 			s := p.Status()
 			assert.NotEmpty(t, s)
 			l, ok := s["localhost"]
 			assert.True(t, ok)
-			assert.Equal(t, 1, l.PacketsRecv)
+			assert.Equal(t, count, l.PacketsRecv)
 		case <-ctx.Done():
 			return
 		}

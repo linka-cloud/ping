@@ -95,6 +95,7 @@ func (p *GoPinger) AddAddress(a string) error {
 	t := &target{pg, atomic.Value{}}
 	t.running.Store(false)
 	t.Timeout = time.Second
+	t.Interval = time.Second
 	t.Count = 100000
 	t.SetPrivileged(p.privileged)
 	t.OnRecv = func(packet *gping.Packet) {
@@ -110,7 +111,7 @@ func (p *GoPinger) AddAddress(a string) error {
 	p.targets.Store(a, t)
 	running := (p.running.Load()).(bool)
 	if running {
-		t.Run()
+		go t.Run()
 	}
 	return nil
 }
