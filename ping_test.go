@@ -2,6 +2,8 @@ package ping
 
 import (
 	"context"
+	"fmt"
+	"github.com/sirupsen/logrus"
 	"runtime"
 	"testing"
 	"time"
@@ -50,10 +52,11 @@ func TestPingerContext(t *testing.T) {
 func TestPingerLocalhost(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 		cancel()
 	}()
-	p, err := NewPinger(ctx, privileged, "localhost")
+	ip := "127.0.0.1"
+	p, err := NewPinger(ctx, privileged, ip)
 	assertNoErr(t, err)
 	go p.Run()
 	c := time.NewTicker(time.Second)
@@ -64,9 +67,36 @@ func TestPingerLocalhost(t *testing.T) {
 			count++
 			s := p.Status()
 			assert.NotEmpty(t, s)
-			l, ok := s["localhost"]
+			l, ok := s[ip]
 			assert.True(t, ok)
+			fmt.Println(l)
 			assert.Equal(t, count, l.PacketsRecv)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func TestPingerTimeout(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Second)
+		cancel()
+	}()
+	ip := "127.0.0.255"
+	p, err := NewPinger(ctx, privileged, ip)
+	assertNoErr(t, err)
+	go p.Run()
+	c := time.NewTicker(time.Second)
+	for {
+		select {
+		case <-c.C:
+			s := p.Status()
+			assert.NotEmpty(t, s)
+			l, ok := s[ip]
+			assert.True(t, ok)
+			fmt.Println(l)
+			assert.Equal(t, 0, l.PacketsRecv)
 		case <-ctx.Done():
 			return
 		}
@@ -85,4 +115,8 @@ func assertErr(t *testing.T, err error) {
 	if err == nil {
 		t.FailNow()
 	}
+}
+
+func init() {
+	logrus.SetLevel(logrus.DebugLevel)
 }

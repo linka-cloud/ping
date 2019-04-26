@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	gping "github.com/sparrc/go-ping"
 )
 
@@ -23,7 +24,6 @@ type GoPinger struct {
 	ctx        context.Context
 	running    atomic.Value
 	targets    sync.Map
-	results    sync.Map
 	privileged bool
 }
 
@@ -34,7 +34,7 @@ type target struct {
 
 func (t *target) Run() {
 	t.running.Store(true)
-	t.Pinger.Run()
+	go t.Pinger.Run()
 }
 
 func (t *target) Stop() {
@@ -55,7 +55,6 @@ func NewPinger(ctx context.Context, privileged bool, address ...string) (Pinger,
 		ctx:        ctx,
 		running:    atomic.Value{},
 		targets:    sync.Map{},
-		results:    sync.Map{},
 		privileged: privileged,
 	}
 	p.running.Store(false)
@@ -94,15 +93,11 @@ func (p *GoPinger) AddAddress(a string) error {
 	}
 	t := &target{pg, atomic.Value{}}
 	t.running.Store(false)
-	t.Timeout = time.Second
-	t.Interval = time.Second
-	t.Count = 100000
 	t.SetPrivileged(p.privileged)
-	t.OnRecv = func(packet *gping.Packet) {
-		p.results.Store(a, *t.Statistics())
-	}
 	t.OnFinish = func(statistics *gping.Statistics) {
-		p.results.Store(a, *t.Statistics())
+		s := *t.Statistics()
+		logrus.Debugf("%s timeout", t.Addr())
+		logrus.Debug(s)
 		time.Sleep(time.Second)
 		if t.running.Load().(bool) {
 			t.Run()
@@ -111,7 +106,7 @@ func (p *GoPinger) AddAddress(a string) error {
 	p.targets.Store(a, t)
 	running := (p.running.Load()).(bool)
 	if running {
-		go t.Run()
+		t.Run()
 	}
 	return nil
 }
@@ -130,7 +125,6 @@ func (p *GoPinger) RemoveAddress(a string) error {
 		target.Stop()
 	}
 	p.targets.Delete(a)
-	p.results.Delete(a)
 	return nil
 }
 
@@ -168,12 +162,12 @@ func (p *GoPinger) Stop() {
 
 func (p *GoPinger) Status() map[string]gping.Statistics {
 	rs := make(map[string]gping.Statistics)
-	p.results.Range(func(key, value interface{}) bool {
-		r, ok := value.(gping.Statistics)
+	p.targets.Range(func(key, value interface{}) bool {
+		t, ok := value.(*target)
 		if !ok {
 			return false
 		}
-		rs[key.(string)] = r
+		rs[key.(string)] = *t.Statistics()
 		return true
 	})
 	return rs
