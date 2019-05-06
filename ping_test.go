@@ -56,9 +56,11 @@ func TestPingerLocalhost(t *testing.T) {
 		cancel()
 	}()
 	ip := "127.0.0.1"
-	p, err := NewPinger(ctx, privileged, ip)
+	p, err := NewPinger(ctx, privileged)
 	assertNoErr(t, err)
 	go p.Run()
+	err = p.AddAddress(ip)
+	assertNoErr(t, err)
 	c := time.NewTicker(time.Second)
 	count := 0
 	for {
@@ -83,10 +85,12 @@ func TestPingerTimeout(t *testing.T) {
 		time.Sleep(5 * time.Second)
 		cancel()
 	}()
-	ip := "127.0.0.255"
-	p, err := NewPinger(ctx, privileged, ip)
+	ip := "255.0.0.255"
+	p, err := NewPinger(ctx, privileged)
 	assertNoErr(t, err)
 	go p.Run()
+	err = p.AddAddress(ip)
+	assertNoErr(t, err)
 	c := time.NewTicker(time.Second)
 	for {
 		select {
@@ -97,6 +101,43 @@ func TestPingerTimeout(t *testing.T) {
 			assert.True(t, ok)
 			fmt.Println(l)
 			assert.Equal(t, 0, l.PacketsRecv)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func TestTwoIPs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Second)
+		cancel()
+	}()
+	ip1 := "255.0.0.255"
+	ip2 := "127.0.0.1"
+	p, err := NewPinger(ctx, privileged)
+	assertNoErr(t, err)
+	go p.Run()
+	err = p.AddAddress(ip1)
+	assertNoErr(t, err)
+	err = p.AddAddress(ip2)
+	assertNoErr(t, err)
+	c := time.NewTicker(time.Second)
+	count := 0
+	for {
+		select {
+		case <-c.C:
+			count++
+			s := p.Status()
+			assert.NotEmpty(t, s)
+			l, ok := s[ip1]
+			assert.True(t, ok)
+			fmt.Println(l)
+			assert.Equal(t, 0, l.PacketsRecv)
+			l, ok = s[ip2]
+			assert.True(t, ok)
+			fmt.Println(l)
+			assert.Equal(t, count, l.PacketsRecv)
 		case <-ctx.Done():
 			return
 		}

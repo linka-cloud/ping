@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
-	gping "github.com/sparrc/go-ping"
+	gping "gitlab.bertha.cloud/partitio/isi/ping/go-ping"
 )
 
 type Pinger interface {
@@ -25,6 +25,7 @@ type GoPinger struct {
 	running    atomic.Value
 	targets    sync.Map
 	privileged bool
+	m          sync.Mutex
 }
 
 type target struct {
@@ -94,8 +95,8 @@ func (p *GoPinger) AddAddress(a string) error {
 	t := &target{pg, atomic.Value{}}
 	t.running.Store(false)
 	t.SetPrivileged(p.privileged)
-	t.OnFinish = func(statistics *gping.Statistics) {
-		s := *t.Statistics()
+	t.OnFinish = func(statistics gping.Statistics) {
+		s := t.Statistics()
 		logrus.Debugf("%s timeout", t.Addr())
 		logrus.Debug(s)
 		time.Sleep(time.Second)
@@ -163,11 +164,7 @@ func (p *GoPinger) Stop() {
 func (p *GoPinger) Status() map[string]gping.Statistics {
 	rs := make(map[string]gping.Statistics)
 	p.targets.Range(func(key, value interface{}) bool {
-		t, ok := value.(*target)
-		if !ok {
-			return false
-		}
-		rs[key.(string)] = *t.Statistics()
+		rs[key.(string)] = value.(*target).Statistics()
 		return true
 	})
 	return rs
