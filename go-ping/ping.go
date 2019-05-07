@@ -63,6 +63,7 @@ const (
 	timeSliceLength  = 8
 	protocolICMP     = 1
 	protocolIPv6ICMP = 58
+	rttsMaxSize      = 10
 )
 
 var (
@@ -104,6 +105,7 @@ func NewPinger(addr string) (*Pinger, error) {
 		ipv4:        ipv4,
 		Size:        timeSliceLength,
 		Tracker:     r.Int63n(math.MaxInt64),
+		sent:        make(chan bool),
 		done:        make(chan bool),
 	}, nil
 }
@@ -146,6 +148,9 @@ type Pinger struct {
 
 	// Tracker: Used to uniquely identify packet when non-priviledged
 	Tracker int64
+
+	// packet sent notification
+	sent chan bool
 
 	// stop chan bool
 	done chan bool
@@ -205,7 +210,8 @@ type Statistics struct {
 	// Addr is the string address of the host being pinged.
 	Addr string
 
-	// Rtts is all of the round-trip times sent via this pinger.
+	// Rtts is the last 10 round-trip times sent via this pinger.
+	// 0 means nothing was received
 	Rtts []time.Duration
 
 	// MinRtt is the minimum round-trip time sent via this pinger.
@@ -305,10 +311,10 @@ func (p *Pinger) run() {
 	go p.recvICMP(conn, recv, &wg)
 
 	err := p.sendICMP(conn)
+	p.sent <- true
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-
 	timeout := time.NewTicker(p.Timeout)
 	defer timeout.Stop()
 	interval := time.NewTicker(p.Interval)
@@ -330,6 +336,7 @@ func (p *Pinger) run() {
 				continue
 			}
 			err = p.sendICMP(conn)
+			p.sent <- true
 			if err != nil {
 				fmt.Println("FATAL: ", err.Error())
 			}
@@ -373,14 +380,17 @@ func (p *Pinger) Statistics() Statistics {
 	pr := p.PacketsRecv.Load().(int)
 	ps := p.PacketsSent.Load().(int)
 	loss := float64(ps-pr) / float64(ps) * 100
-	var min, max, total time.Duration
+	var min, max, total, count time.Duration
 	p.rttsLock.Lock()
 	defer p.rttsLock.Unlock()
 	if len(p.rtts) > 0 {
-		min = p.rtts[0]
-		max = p.rtts[0]
+		min = math.MaxInt64
+		max = 0
 	}
 	for _, rtt := range p.rtts {
+		if rtt == 0 {
+			continue
+		}
 		if rtt < min {
 			min = rtt
 		}
@@ -388,6 +398,11 @@ func (p *Pinger) Statistics() Statistics {
 			max = rtt
 		}
 		total += rtt
+		count++
+	}
+	// Reset min if the was only timeouts in p.rtts
+	if min == math.MaxInt64 {
+		min = 0
 	}
 	s := Statistics{
 		PacketsSent: ps,
@@ -399,14 +414,14 @@ func (p *Pinger) Statistics() Statistics {
 		MaxRtt:      max,
 		MinRtt:      min,
 	}
-	if len(p.rtts) > 0 {
-		s.AvgRtt = total / time.Duration(len(p.rtts))
+	if count > 0 {
+		s.AvgRtt = total / count
 		var sumsquares time.Duration
 		for _, rtt := range p.rtts {
 			sumsquares += (rtt - s.AvgRtt) * (rtt - s.AvgRtt)
 		}
 		s.StdDevRtt = time.Duration(math.Sqrt(
-			float64(sumsquares / time.Duration(len(p.rtts)))))
+			float64(sumsquares / count)))
 	}
 	return s
 }
@@ -421,16 +436,13 @@ func (p *Pinger) recvICMP(
 		select {
 		case <-p.done:
 			return
-		default:
+		case <-p.sent:
 			bytes := make([]byte, 512)
 			conn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
 			n, _, err := conn.ReadFrom(bytes)
 			if err != nil {
 				if neterr, ok := err.(*net.OpError); ok {
-					if neterr.Timeout() {
-						// Read timeout
-						continue
-					} else {
+					if !neterr.Timeout() {
 						close(p.done)
 						return
 					}
@@ -443,6 +455,26 @@ func (p *Pinger) recvICMP(
 }
 
 func (p *Pinger) processPacket(recv *packet) error {
+	outPkt := Packet{
+		Nbytes: recv.nbytes,
+		IPAddr: p.ipaddr,
+		Addr:   p.addr,
+	}
+	// If we didn't received anything
+	if recv.nbytes == 0 {
+		p.rttsLock.Lock()
+		if len(p.rtts) <= rttsMaxSize {
+			p.rtts = append(p.rtts, outPkt.Rtt)
+		} else {
+			p.rtts = append(p.rtts[1:], outPkt.Rtt)
+		}
+		p.rttsLock.Unlock()
+		handler := p.OnRecv
+		if handler != nil {
+			handler(outPkt)
+		}
+		return nil
+	}
 	var bytes []byte
 	var proto int
 	if p.ipv4 {
@@ -488,12 +520,6 @@ func (p *Pinger) processPacket(recv *packet) error {
 		}
 	}
 
-	outPkt := Packet{
-		Nbytes: recv.nbytes,
-		IPAddr: p.ipaddr,
-		Addr:   p.addr,
-	}
-
 	switch pkt := m.Body.(type) {
 	case *icmp.Echo:
 		data := IcmpData{}
@@ -513,7 +539,11 @@ func (p *Pinger) processPacket(recv *packet) error {
 	}
 
 	p.rttsLock.Lock()
-	p.rtts = append(p.rtts, outPkt.Rtt)
+	if len(p.rtts) <= rttsMaxSize {
+		p.rtts = append(p.rtts, outPkt.Rtt)
+	} else {
+		p.rtts = append(p.rtts[1:], outPkt.Rtt)
+	}
 	p.rttsLock.Unlock()
 	handler := p.OnRecv
 	if handler != nil {
