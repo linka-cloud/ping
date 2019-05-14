@@ -12,22 +12,33 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+//Pinger
 type Pinger interface {
+	// deprecated: removed udp support
 	Privileged() bool
 
+	// Addresses returns the list of the destinations host
 	Addresses() []string
+	// IPAddresses returns the list of the destinations addresses
 	IPAddresses() []net.IPAddr
 
+	// AddAddress add a destination to the pinger
 	AddAddress(a string) error
+	// Remove Address remove a destination from the pinger
 	RemoveAddress(a string) error
 
+	// Run start the pinger. It fails silently if the pinger is already running
 	Run()
+	// Stop stops the pinger. It fails silently if the pinger is already stopped
 	Stop()
 
+	// IsRunning returns the state of the pinger
 	IsRunning() bool
 
+	// Statistics returns the a map address ping Statistics
 	Statistics() map[string]Statistics
 
+	// Close closes the connection. It should be call deferred right after the creation of the pinger
 	Close()
 }
 
@@ -50,6 +61,7 @@ type _pinger struct {
 	done chan bool
 }
 
+//NewPinger create a new Pinger with given addresses
 func NewPinger(ctx context.Context, addrs ...string) (Pinger, error) {
 	p, err := newPinger(ctx)
 	if err != nil {
@@ -82,6 +94,7 @@ func newPinger(ctx context.Context) (*_pinger, error) {
 	return p, nil
 }
 
+// deprecated
 func (*_pinger) Privileged() bool {
 	return true
 }

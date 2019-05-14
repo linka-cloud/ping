@@ -24,7 +24,7 @@ type Statistics struct {
 	Addr string
 
 	// Rtts is the last 10 round-trip times sent via this pinger.
-	// 0 means nothing was received
+	// 0 means timeout
 	Rtts []time.Duration
 
 	// MinRtt is the minimum round-trip time sent via this pinger.
