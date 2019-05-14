@@ -198,6 +198,9 @@ func (p *_pinger) ping() {
 }
 
 func (p *_pinger) Stop() {
+	defer func() {
+		recover()
+	}()
 	p.rmu.Lock()
 	defer p.rmu.Unlock()
 	if !p.running {
