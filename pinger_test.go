@@ -54,13 +54,16 @@ func TestPingerLocalhost(t *testing.T) {
 	for {
 		select {
 		case <-c.C:
+			if !p.IsRunning() {
+				return
+			}
 			count++
 			s := p.Statistics()
 			assert.NotEmpty(t, s)
 			l, ok := s[ip]
 			assert.True(t, ok)
 			logrus.Debug(l)
-			assert.Equal(t, count, l.PacketsRecv)
+			assert.InDelta(t, count, l.PacketsRecv, 1)
 			rtts := filterZeros(l.Rtts)
 			assert.Equal(t, count, len(rtts))
 		case <-ctx.Done():
@@ -85,6 +88,9 @@ func TestPingerTimeout(t *testing.T) {
 		select {
 		case <-c.C:
 			count++
+			if !p.IsRunning() {
+				return
+			}
 			s := p.Statistics()
 			assert.NotEmpty(t, s)
 			l, ok := s[ip]
@@ -134,6 +140,9 @@ func TestPingerReset(t *testing.T) {
 				continue
 			}
 			if resetDone {
+				if !p.IsRunning() {
+					return
+				}
 				s := p.Statistics()
 				logrus.Debug(s)
 
@@ -208,6 +217,9 @@ func TestTwoIPs(t *testing.T) {
 		select {
 		case <-c.C:
 			count++
+			if !p.IsRunning() {
+				return
+			}
 			s := p.Statistics()
 			assert.NotEmpty(t, s)
 			logrus.Debug(s)
@@ -234,6 +246,7 @@ func TestPinger(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	p, err := NewPinger(ctx, "127.0.0.1", "255.0.0.255", "127.0.0.2")
+	p.SetLogger(logrus.StandardLogger())
 	assert.NoError(t, err)
 	if err != nil {
 		t.FailNow()
@@ -264,6 +277,9 @@ func TestPinger(t *testing.T) {
 		select {
 		case <-tk.C:
 			count++
+			if !p.IsRunning() {
+				return
+			}
 			s := p.Statistics()
 			logrus.Debugf("count: %d", count)
 			for _, v := range s {
@@ -319,6 +335,9 @@ func TestPingerStatistics(t *testing.T) {
 	for {
 		select {
 		case <-tk.C:
+			if !p.IsRunning() {
+				return
+			}
 			count++
 			s := p.Statistics()
 			ls, ok := s["127.0.0.1"]

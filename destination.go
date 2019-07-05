@@ -34,7 +34,11 @@ func (u *destination) ping(pinger *ping.Pinger, timeout time.Duration) {
 
 func (s *history) addResult(rtt time.Duration, err error) {
 	s.mtx.Lock()
-	s.results[(s.received+s.lost)%len(s.results)] = rtt
+	if len(s.results) > 1 {
+		s.results = append([]time.Duration{rtt}, s.results[:len(s.results)-2]...)
+	} else if len(s.results) == 1 {
+		s.results[0] = rtt
+	}
 	if err == nil {
 		s.received++
 	} else {
