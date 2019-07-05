@@ -231,7 +231,9 @@ func (p *_pinger) Stop() {
 	p.smu.Unlock()
 	p.dmu.Lock()
 	for k := range p.dsts {
-		p.dsts[k].history = &history{}
+		p.dsts[k].history = &history{
+			results: make([]time.Duration, p.opts.statBufferSize),
+		}
 	}
 	p.dmu.Unlock()
 	p.logger.Debug("Stopped")
