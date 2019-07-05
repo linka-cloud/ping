@@ -146,9 +146,9 @@ func TestPingerReset(t *testing.T) {
 				l, ok = s[ip2]
 				assert.True(t, ok)
 				logrus.Debug(l)
-				assert.InDelta(t, count-5, l.PacketsRecv, 1)
+				assert.InDelta(t, count-5, l.PacketsRecv, 2)
 				rtts = filterZeros(l.Rtts)
-				assert.InDelta(t, l.PacketsRecv, len(rtts), 1)
+				assert.InDelta(t, l.PacketsRecv, len(rtts), 2)
 				continue
 			}
 			if len(p.Addresses()) < 2 {

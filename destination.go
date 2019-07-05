@@ -34,8 +34,8 @@ func (u *destination) ping(pinger *ping.Pinger, timeout time.Duration) {
 
 func (s *history) addResult(rtt time.Duration, err error) {
 	s.mtx.Lock()
+	s.results[(s.received+s.lost)%len(s.results)] = rtt
 	if err == nil {
-		s.results[s.received%len(s.results)] = rtt
 		s.received++
 	} else {
 		s.lost++
