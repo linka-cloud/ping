@@ -7,6 +7,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRunPingerNoAddress(t *testing.T) {
@@ -16,46 +17,38 @@ func TestRunPingerNoAddress(t *testing.T) {
 		cancel()
 	}()
 	p, err := NewPinger(ctx)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	p.Run()
 }
 
 func TestRunPingerWrongAddress(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(time.Second)
-		cancel()
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	p, err := NewPinger(ctx, "some.wrong.address", "localhost")
-	assertErr(t, err)
+	assert.Error(t, err)
 	assert.Nil(t, p)
 }
 
 func TestPingerContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		cancel()
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
 	p, err := newPinger(ctx)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	go p.Run()
 	time.Sleep(time.Second)
 	assert.False(t, p.IsRunning())
 }
 
 func TestPingerLocalhost(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(5 * time.Second)
-		cancel()
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	ip := "127.0.0.1"
 	p, err := NewPinger(ctx)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	go p.Run()
 	err = p.AddAddress(ip)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	c := time.NewTicker(time.Second)
 	count := 0
 	for {
@@ -77,17 +70,15 @@ func TestPingerLocalhost(t *testing.T) {
 }
 
 func TestPingerTimeout(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(5 * time.Second)
-		cancel()
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	ip := "255.0.0.255"
 	p, err := NewPinger(ctx)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	go p.Run()
 	err = p.AddAddress(ip)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	c := time.NewTicker(time.Second)
 	count := 0
 	for {
@@ -108,6 +99,94 @@ func TestPingerTimeout(t *testing.T) {
 	}
 }
 
+func TestPingerReset(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
+	defer cancel()
+	ip1 := "255.0.0.255"
+	ip2 := "127.0.0.1"
+	p, err := NewPinger(ctx, ip1, ip2)
+	require.NoError(t, err)
+	l := logrus.New()
+	l.SetLevel(logrus.DebugLevel)
+	l.WithField("lib", "Pinger")
+	p.SetLogger(l)
+	go p.Run()
+	to := time.After(5 * time.Second)
+	c := time.NewTicker(time.Second)
+	resetting := false
+	resetDone := false
+	count := 0
+	for {
+		select {
+		case <-c.C:
+			count++
+			if !p.IsRunning() || resetting {
+				logrus.Debug("Pinger not running or resetting")
+				continue
+			}
+			if !resetting && count >= 5 && !resetDone {
+				logrus.Debug("Re-adding ips")
+				err = p.AddAddress(ip1)
+				require.NoError(t, err)
+				err = p.AddAddress(ip2)
+				require.NoError(t, err)
+				resetDone = true
+				continue
+			}
+			if resetDone {
+				s := p.Statistics()
+				logrus.Debug(s)
+
+				l, ok := s[ip1]
+				assert.True(t, ok)
+				logrus.Debug(l)
+				assert.Equal(t, 0, l.PacketsRecv)
+				rtts := filterZeros(l.Rtts)
+				assert.Equal(t, 0, len(rtts))
+				l, ok = s[ip2]
+				assert.True(t, ok)
+				logrus.Debug(l)
+				assert.InDelta(t, count-5, l.PacketsRecv, 1)
+				rtts = filterZeros(l.Rtts)
+				assert.InDelta(t, l.PacketsRecv, len(rtts), 1)
+				continue
+			}
+			if len(p.Addresses()) < 2 {
+				continue
+			}
+			s := p.Statistics()
+			logrus.Debug(s)
+
+			l, ok := s[ip1]
+			assert.True(t, ok)
+			logrus.Debug(l)
+			assert.Equal(t, 0, l.PacketsRecv)
+			rtts := filterZeros(l.Rtts)
+			assert.Equal(t, 0, len(rtts))
+			l, ok = s[ip2]
+			assert.True(t, ok)
+			logrus.Debug(l)
+			assert.InDelta(t, count, l.PacketsRecv, 1)
+			rtts = filterZeros(l.Rtts)
+			assert.InDelta(t, l.PacketsRecv, len(rtts), 1)
+
+		case <-to:
+			logrus.Debug("Resetting Pinger")
+			resetting = true
+			p.Stop()
+			err = p.RemoveAddress(ip1)
+			require.NoError(t, err)
+			err = p.RemoveAddress(ip2)
+			require.NoError(t, err)
+			go p.Run()
+			resetting = false
+		case <-ctx.Done():
+			return
+		}
+	}
+
+}
+
 func TestTwoIPs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -117,12 +196,12 @@ func TestTwoIPs(t *testing.T) {
 	ip1 := "255.0.0.255"
 	ip2 := "127.0.0.1"
 	p, err := NewPinger(ctx)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	go p.Run()
 	err = p.AddAddress(ip1)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	err = p.AddAddress(ip2)
-	assertNoErr(t, err)
+	require.NoError(t, err)
 	c := time.NewTicker(time.Second)
 	count := 0
 	for {
@@ -131,6 +210,7 @@ func TestTwoIPs(t *testing.T) {
 			count++
 			s := p.Statistics()
 			assert.NotEmpty(t, s)
+			logrus.Debug(s)
 
 			l, ok := s[ip1]
 			assert.True(t, ok)
@@ -138,7 +218,6 @@ func TestTwoIPs(t *testing.T) {
 			assert.Equal(t, 0, l.PacketsRecv)
 			rtts := filterZeros(l.Rtts)
 			assert.Equal(t, 0, len(rtts))
-
 			l, ok = s[ip2]
 			assert.True(t, ok)
 			logrus.Debug(l)
@@ -151,45 +230,14 @@ func TestTwoIPs(t *testing.T) {
 	}
 }
 
-func assertNoErr(t *testing.T, err error) {
-	assert.NoError(t, err)
-	if err != nil {
-		t.FailNow()
-	}
-}
-
-func assertErr(t *testing.T, err error) {
-	assert.Error(t, err)
-	if err == nil {
-		t.FailNow()
-	}
-}
-
-func filterZeros(s []time.Duration) []time.Duration {
-	var out []time.Duration
-	for _, d := range s {
-		if d != time.Duration(0) {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-func init() {
-	logrus.SetLevel(logrus.DebugLevel)
-}
-
 func TestPinger(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	p, err := NewPinger(ctx, "127.0.0.1", "255.0.0.255", "127.0.0.2")
 	assert.NoError(t, err)
 	if err != nil {
 		t.FailNow()
 	}
-	go func() {
-		time.Sleep(10 * time.Second)
-		cancel()
-	}()
 
 	go func() {
 		time.Sleep(5 * time.Second)
@@ -257,17 +305,13 @@ func TestPinger(t *testing.T) {
 }
 
 func TestPingerStatistics(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	p, err := NewPinger(ctx, "127.0.0.1")
 	assert.NoError(t, err)
 	if err != nil {
 		t.FailNow()
 	}
-	go func() {
-		time.Sleep(5 * time.Second)
-		cancel()
-	}()
-
 	tk := time.NewTicker(time.Second)
 	defer tk.Stop()
 	count := 0
@@ -292,15 +336,16 @@ func TestPingerStatistics(t *testing.T) {
 	}
 }
 
+func filterZeros(s []time.Duration) []time.Duration {
+	var out []time.Duration
+	for _, d := range s {
+		if d != time.Duration(0) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 func init() {
 	logrus.SetLevel(logrus.DebugLevel)
 }
-
-//func TestMaxint(t *testing.T) {
-//	c := math.MaxInt64
-//	var i int64 = 0
-//	for ; i < 10; i++ {
-//		c++
-//		logrus.Debug(c)
-//	}
-//}

@@ -38,6 +38,8 @@ type Pinger interface {
 	// Statistics returns the a map address ping Statistics
 	Statistics() map[string]Statistics
 
+	SetLogger(l logrus.FieldLogger)
+
 	// Close closes the connection. It should be call deferred right after the creation of the pinger
 	Close()
 }
@@ -59,6 +61,8 @@ type _pinger struct {
 	smu     sync.RWMutex
 
 	done chan bool
+
+	logger logrus.FieldLogger
 }
 
 //NewPinger create a new Pinger with given addresses
@@ -91,12 +95,17 @@ func newPinger(ctx context.Context) (*_pinger, error) {
 		instance.SetPayloadSize(uint16(defaultOptions.payloadSize))
 	}
 	p.pinger = instance
+	p.logger = logrus.New()
 	return p, nil
 }
 
 // deprecated
 func (*_pinger) Privileged() bool {
 	return true
+}
+
+func (p *_pinger) SetLogger(l logrus.FieldLogger) {
+	p.logger = l
 }
 
 func (p *_pinger) Addresses() []string {
@@ -140,7 +149,7 @@ func (p *_pinger) AddAddress(a string) error {
 			results: make([]time.Duration, p.opts.statBufferSize),
 		},
 	}
-
+	p.logger.Debugf("Added address: %s", a)
 	p.dsts[a] = &dst
 	return nil
 }
@@ -154,26 +163,33 @@ func (p *_pinger) RemoveAddress(a string) error {
 	delete(p.dsts, a)
 	p.smu.Lock()
 	delete(p.stats, a)
+	p.logger.Debugf("Removed address %s (%v)", a, p.stats[a])
 	p.smu.Unlock()
 	return nil
 }
 
 func (p *_pinger) Run() {
+	if p.IsRunning() {
+		return
+	}
 	p.rmu.Lock()
 	p.running = true
 	p.rmu.Unlock()
+	p.done = make(chan bool)
+	p.logger.Debug("Starting pinger")
 	p.ping()
 	t := time.NewTicker(p.opts.interval)
 	defer t.Stop()
 	for {
 		select {
 		case <-t.C:
+			p.logger.Debug("Pinging")
 			p.ping()
 		case <-p.ctx.Done():
-			logrus.Debug(p.ctx.Err())
+			p.logger.Debug(p.ctx.Err())
 			p.Stop()
 		case <-p.done:
-			logrus.Debug("received stop signal")
+			p.logger.Debug("received stop signal")
 			return
 		}
 	}
@@ -181,12 +197,14 @@ func (p *_pinger) Run() {
 
 func (p *_pinger) ping() {
 	p.dmu.RLock()
-	logrus.Debugf("destinations' count: %d", len(p.dsts))
+	p.logger.Debugf("destinations' count: %d", len(p.dsts))
+	p.logger.Debugf("destinations: %v", p.dsts)
 	for a := range p.dsts {
 		go func(d *destination, addr string) {
-			logrus.Debugf("pinging %s", addr)
+			p.logger.Debugf("pinging %s", addr)
 			d.ping(p.pinger, p.opts.timeout)
 			s := d.compute()
+			p.logger.Debugf("%s : %v", addr, s)
 			s.Addr = addr
 			s.IPAddr = *d.remote
 			p.smu.Lock()
@@ -208,6 +226,15 @@ func (p *_pinger) Stop() {
 	}
 	close(p.done)
 	p.running = false
+	p.smu.Lock()
+	p.stats = make(map[string]Statistics)
+	p.smu.Unlock()
+	p.dmu.Lock()
+	for k := range p.dsts {
+		p.dsts[k].history = &history{}
+	}
+	p.dmu.Unlock()
+	p.logger.Debug("Stopped")
 }
 
 func (p *_pinger) IsRunning() bool {
@@ -217,24 +244,27 @@ func (p *_pinger) IsRunning() bool {
 }
 
 func (p *_pinger) Statistics() map[string]Statistics {
+	p.logger.Debug("Collecting stats")
 	p.smu.RLock()
+	defer p.smu.RUnlock()
 	p.dmu.Lock()
+	defer p.dmu.Unlock()
 	// Empty Copy
 	out := make(map[string]Statistics)
 	// Filter removed addresses
 	for k := range p.stats {
+		// Copy to output map
 		if _, ok := p.dsts[k]; !ok {
+			p.logger.Debugf("%s has been removed. deleting stats", k)
 			delete(p.stats, k)
 		} else {
-			// Copy to output map
 			s := p.stats[k]
+			p.logger.Debugf("Got stats for %s : rtts: %v", s.Addr, s.Rtts)
 			s.Rtts = make([]time.Duration, 10)
 			copy(s.Rtts, p.stats[k].Rtts)
 			out[k] = s
 		}
 	}
-	p.dmu.Unlock()
-	defer p.smu.RUnlock()
 	return out
 }
 
