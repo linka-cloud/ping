@@ -140,10 +140,10 @@ func TestPingerReset(t *testing.T) {
 				continue
 			}
 			if resetDone {
+				s := p.Statistics()
 				if !p.IsRunning() {
 					return
 				}
-				s := p.Statistics()
 				logrus.Debug(s)
 
 				l, ok := s[ip1]
@@ -217,10 +217,10 @@ func TestTwoIPs(t *testing.T) {
 		select {
 		case <-c.C:
 			count++
+			s := p.Statistics()
 			if !p.IsRunning() {
 				return
 			}
-			s := p.Statistics()
 			assert.NotEmpty(t, s)
 			logrus.Debug(s)
 
@@ -246,11 +246,11 @@ func TestPinger(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	p, err := NewPinger(ctx, "127.0.0.1", "255.0.0.255", "127.0.0.2")
-	p.SetLogger(logrus.StandardLogger())
 	assert.NoError(t, err)
 	if err != nil {
 		t.FailNow()
 	}
+	p.SetLogger(logrus.StandardLogger())
 
 	go func() {
 		time.Sleep(5 * time.Second)
@@ -277,10 +277,10 @@ func TestPinger(t *testing.T) {
 		select {
 		case <-tk.C:
 			count++
+			s := p.Statistics()
 			if !p.IsRunning() {
 				return
 			}
-			s := p.Statistics()
 			logrus.Debugf("count: %d", count)
 			for _, v := range s {
 				logStats(v)
@@ -335,13 +335,13 @@ func TestPingerStatistics(t *testing.T) {
 	for {
 		select {
 		case <-tk.C:
+			count++
+			s := p.Statistics()
 			if !p.IsRunning() {
 				return
 			}
-			count++
-			s := p.Statistics()
 			ls, ok := s["127.0.0.1"]
-			assert.True(t, ok)
+			require.True(t, ok)
 			logrus.Debugf("127.0.0.1 : %v", ls)
 			assert.Equal(t, 10, len(ls.Rtts))
 			for i, rtt := range ls.Rtts {

@@ -34,11 +34,15 @@ func (u *destination) ping(pinger *ping.Pinger, timeout time.Duration) {
 
 func (s *history) addResult(rtt time.Duration, err error) {
 	s.mtx.Lock()
-	if len(s.results) > 1 {
-		s.results = append([]time.Duration{rtt}, s.results[:len(s.results)-2]...)
-	} else if len(s.results) == 1 {
+
+	switch len(s.results) {
+	case 0:
+	case 1:
 		s.results[0] = rtt
+	default:
+		s.results = append([]time.Duration{rtt}, s.results[:len(s.results)-1]...)
 	}
+	// TODO : What if we reach max of int
 	if err == nil {
 		s.received++
 	} else {
@@ -56,44 +60,42 @@ func (s *history) compute() (st Statistics) {
 	if s.received == 0 {
 		if s.lost > 0 {
 			st.PacketLoss = 100
-			st.Rtts = make([]time.Duration, 10)
+			st.Rtts = make([]time.Duration, len(s.results))
 			copy(st.Rtts, s.results)
 		}
 		return
 	}
 
-	collection := s.results[:]
-	st.PacketsSent = s.received + s.lost
-	size := len(s.results)
-
-	// we don't yet have filled the buffer
-	if s.received <= size {
-		collection = s.results[:s.received]
-		size = s.received
-	}
-
 	st.PacketLoss = float64(s.lost) / float64(s.received+s.lost) * 100
-	st.MinRtt, st.MaxRtt = collection[0], collection[0]
+	st.MinRtt, st.MaxRtt = s.results[0], s.results[0]
 
 	total := time.Duration(0)
-	for _, rtt := range collection {
-		if rtt < st.MinRtt {
+	count := 0
+	for _, rtt := range s.results {
+		if rtt < st.MinRtt && rtt != 0 {
 			st.MinRtt = rtt
 		}
 		if rtt > st.MaxRtt {
 			st.MaxRtt = rtt
 		}
+		if rtt != 0 {
+			count++
+		}
 		total += rtt
 	}
 
-	st.AvgRtt = time.Duration(float64(total) / float64(size))
+	if count == 0 {
+		count = 1
+	}
+
+	st.AvgRtt = time.Duration(float64(total) / float64(count))
 
 	stddevNum := float64(0)
-	for _, rtt := range collection {
+	for _, rtt := range s.results {
 		stddevNum += math.Pow(float64(rtt-st.AvgRtt), 2)
 	}
-	st.StdDevRtt = time.Duration(math.Sqrt(stddevNum / float64(size)))
-	st.Rtts = make([]time.Duration, 10)
+	st.StdDevRtt = time.Duration(math.Sqrt(stddevNum / float64(count)))
+	st.Rtts = make([]time.Duration, len(s.results))
 	copy(st.Rtts, s.results)
 	return
 }

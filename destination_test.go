@@ -41,18 +41,6 @@ func TestComputeStats(t *testing.T) {
 			best:     ms, worst: ms, mean: ms, stddev: z,
 		},
 		{
-			title:    "same as before, but sent>len(res)",
-			results:  []time.Duration{ms},
-			received: 3,
-			best:     ms, worst: ms, mean: ms, stddev: z,
-		},
-		{
-			title:    "same as before, but sent<len(res)",
-			results:  []time.Duration{ms, ms, 5 * ms},
-			received: 2,
-			best:     ms, worst: ms, mean: ms, stddev: z,
-		},
-		{
 			title:    "different numbers, manually calculated",
 			results:  []time.Duration{ms, 2 * ms},
 			received: 2,
@@ -109,4 +97,45 @@ func TestComputeStats(t *testing.T) {
 		assert.Equal(tc.received+tc.lost, subject.PacketsSent, "test case #%d (%s): pktSent", i, tc.title)
 		assert.InDelta(tc.loss, subject.PacketLoss, 0.01, "test case #%d (%s): pktLoss", i, tc.title)
 	}
+}
+
+func Test_history_addResult(t *testing.T) {
+	h := &history{
+		results: make([]time.Duration, 10),
+	}
+	h.addResult(1, nil)
+	assert.Equal(t, []time.Duration{1, 0, 0, 0, 0, 0, 0, 0, 0, 0}, h.results)
+
+	h.addResult(2, nil)
+	assert.Equal(t, []time.Duration{2, 1, 0, 0, 0, 0, 0, 0, 0, 0}, h.results)
+
+	h.addResult(3, nil)
+	assert.Equal(t, []time.Duration{3, 2, 1, 0, 0, 0, 0, 0, 0, 0}, h.results)
+
+	h.addResult(4, nil)
+	assert.Equal(t, []time.Duration{4, 3, 2, 1, 0, 0, 0, 0, 0, 0}, h.results)
+
+	h.addResult(5, nil)
+	assert.Equal(t, []time.Duration{5, 4, 3, 2, 1, 0, 0, 0, 0, 0}, h.results)
+
+	h.addResult(6, nil)
+	assert.Equal(t, []time.Duration{6, 5, 4, 3, 2, 1, 0, 0, 0, 0}, h.results)
+
+	h.addResult(7, nil)
+	assert.Equal(t, []time.Duration{7, 6, 5, 4, 3, 2, 1, 0, 0, 0}, h.results)
+
+	h.addResult(8, nil)
+	assert.Equal(t, []time.Duration{8, 7, 6, 5, 4, 3, 2, 1, 0, 0}, h.results)
+
+	h.addResult(9, nil)
+	assert.Equal(t, []time.Duration{9, 8, 7, 6, 5, 4, 3, 2, 1, 0}, h.results)
+
+	h.addResult(10, nil)
+	assert.Equal(t, []time.Duration{10, 9, 8, 7, 6, 5, 4, 3, 2, 1}, h.results)
+
+	h.addResult(11, nil)
+	assert.Equal(t, []time.Duration{11, 10, 9, 8, 7, 6, 5, 4, 3, 2}, h.results)
+
+	h.addResult(0, nil)
+	assert.Equal(t, []time.Duration{0, 11, 10, 9, 8, 7, 6, 5, 4, 3}, h.results)
 }
