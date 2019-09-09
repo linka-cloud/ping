@@ -35,18 +35,22 @@ func (u *destination) ping(pinger *ping.Pinger, timeout time.Duration) {
 func (s *history) addResult(rtt time.Duration, err error) {
 	s.mtx.Lock()
 
+	// TODO : What if we reach max of int
+	if err == nil {
+		s.received++
+		// On windows there may be rtt 0 caused by bad time resolution
+		if rtt == 0 {
+			rtt = 1
+		}
+	} else {
+		s.lost++
+	}
 	switch len(s.results) {
 	case 0:
 	case 1:
 		s.results[0] = rtt
 	default:
 		s.results = append([]time.Duration{rtt}, s.results[:len(s.results)-1]...)
-	}
-	// TODO : What if we reach max of int
-	if err == nil {
-		s.received++
-	} else {
-		s.lost++
 	}
 	s.mtx.Unlock()
 }
