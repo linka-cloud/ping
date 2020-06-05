@@ -20,11 +20,8 @@ import (
 )
 
 func main() {
-    ctx, cancel := context.WithCancel(context.Background())
-    go func() {
-        time.Sleep(5 * time.Second)
-        cancel()
-    }()
+    ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
+    defer cancel()
     p, err := ping.NewPinger(ctx, "127.0.0.1", "255.0.0.1", "192.168.12.1")
     if err != nil {
         logrus.Fatal(err)
