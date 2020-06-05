@@ -1,5 +1,7 @@
 module gitlab.bertha.cloud/partitio/isi/ping
 
+go 1.14
+
 require (
 	github.com/digineo/go-ping v1.0.0
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect

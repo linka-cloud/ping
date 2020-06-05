@@ -1,6 +1,7 @@
 package ping
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -137,5 +138,8 @@ func Test_history_addResult(t *testing.T) {
 	assert.Equal(t, []time.Duration{11, 10, 9, 8, 7, 6, 5, 4, 3, 2}, h.results)
 
 	h.addResult(0, nil)
-	assert.Equal(t, []time.Duration{0, 11, 10, 9, 8, 7, 6, 5, 4, 3}, h.results)
+	assert.Equal(t, []time.Duration{1000, 11, 10, 9, 8, 7, 6, 5, 4, 3}, h.results)
+
+	h.addResult(0, errors.New("noop"))
+	assert.Equal(t, []time.Duration{0, 1000, 11, 10, 9, 8, 7, 6, 5, 4}, h.results)
 }

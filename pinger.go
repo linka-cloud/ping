@@ -174,8 +174,8 @@ func (p *_pinger) Run() {
 	}
 	p.rmu.Lock()
 	p.running = true
-	p.rmu.Unlock()
 	p.done = make(chan bool)
+	p.rmu.Unlock()
 	p.logger.Debug("Starting pinger")
 	p.ping()
 	t := time.NewTicker(p.opts.interval)

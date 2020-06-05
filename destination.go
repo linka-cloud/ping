@@ -40,7 +40,7 @@ func (s *history) addResult(rtt time.Duration, err error) {
 		s.received++
 		// On windows there may be rtt 0 caused by bad time resolution
 		if rtt == 0 {
-			rtt = 1
+			rtt = 1000
 		}
 	} else {
 		s.lost++

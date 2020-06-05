@@ -11,11 +11,8 @@ import (
 )
 
 func TestRunPingerNoAddress(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(time.Second)
-		cancel()
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	p, err := NewPinger(ctx)
 	require.NoError(t, err)
 	p.Run()
@@ -197,11 +194,8 @@ func TestPingerReset(t *testing.T) {
 }
 
 func TestTwoIPs(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(5 * time.Second)
-		cancel()
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	ip1 := "255.0.0.255"
 	ip2 := "127.0.0.1"
 	p, err := NewPinger(ctx)
