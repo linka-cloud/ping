@@ -312,6 +312,15 @@ func TestPinger(t *testing.T) {
 			return
 		}
 	}
+	p.Reset()
+	assert.Len(t, p.Addresses(), 0)
+	assert.Len(t, p.Statistics(), 0)
+	p.AddAddress("127.0.0.1")
+	p.AddAddress("127.0.0.2")
+	go p.Run()
+	time.Sleep(2 * time.Second)
+	s := p.Statistics()
+	assert.Len(t, s, 2)
 }
 
 func TestPingerStatistics(t *testing.T) {

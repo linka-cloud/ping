@@ -34,6 +34,9 @@ type Pinger interface {
 	// IsRunning returns the state of the pinger
 	IsRunning() bool
 
+	// Reset reset stop and remove all addresses
+	Reset()
+
 	// Statistics returns the a map address ping Statistics
 	Statistics() map[string]Statistics
 
@@ -274,6 +277,15 @@ func (p *_pinger) Statistics() map[string]Statistics {
 		}
 	}
 	return out
+}
+
+func (p *_pinger) Reset() {
+	p.Stop()
+	p.dmu.Lock()
+	defer p.dmu.Unlock()
+	p.dsts = make(map[string]*destination)
+	p.stats = make(map[string]Statistics)
+	p.done = make(chan bool)
 }
 
 func (p *_pinger) Close() {
