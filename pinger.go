@@ -3,7 +3,6 @@ package ping
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -43,6 +42,13 @@ type Pinger interface {
 	// Close closes the connection. It should be call deferred right after the creation of the pinger
 	Close()
 }
+
+var (
+	ErrIPUnsupported = errors.New("configuration cannot support this ip, please set bind4 or bind6")
+	ErrNotFound      = errors.New("not found")
+	ErrAlreadyExists = errors.New("already exists")
+	ErrResolveHost   = errors.New("error resolving host")
+)
 
 type _pinger struct {
 	ctx context.Context
@@ -133,13 +139,13 @@ func (p *_pinger) AddAddress(a string) error {
 	defer p.dmu.Unlock()
 	ipaddr, err := resolve(a, p.opts.resolverTimeout)
 	if err != nil {
-		return fmt.Errorf("error resolving host %s: %v", a, err)
+		return ErrResolveHost
 	}
 	if _, ok := p.dsts[a]; ok {
-		return fmt.Errorf("%s already exists", a)
+		return ErrAlreadyExists
 	}
 	if v4 := ipaddr.IP.To4() != nil; v4 && p.opts.bind4 == "" || !v4 && p.opts.bind6 == "" {
-		return errors.New("configuration cannot support this ip, please set bind4 or bind6")
+		return ErrIPUnsupported
 	}
 
 	dst := destination{
@@ -158,7 +164,7 @@ func (p *_pinger) RemoveAddress(a string) error {
 	p.dmu.Lock()
 	defer p.dmu.Unlock()
 	if _, ok := p.dsts[a]; !ok {
-		return fmt.Errorf("%s not found", a)
+		return ErrNotFound
 	}
 	delete(p.dsts, a)
 	p.smu.Lock()
